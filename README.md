@@ -1,12 +1,8 @@
 <h1 align="center">Large Scale Dimensionality Reduction</h1>
 
----
-
 # Table of Contents
 1. [Introduction](#introduction)
 2. [Project setup](#project-setup)
-
----
 
 # Introduction
 
@@ -24,8 +20,6 @@ This approach can help to solve both of the issues. As it was mentioned, the pro
 By the definition of the HPC as high-performance computing environments, it has special hardware/software combined with the huge amount of resources such as RAM, CPUs and GPUs that are used together to perfrom very complex calculations, where dimensionality reduction is a one of the examples.
 
 To sum it up: super computers are going to solve two main issues with the already existing application - it’s going to take a responsibility for storing data along with the computational costs of differente dimensionality techniques.
-
----
 
 # Project setup
 
