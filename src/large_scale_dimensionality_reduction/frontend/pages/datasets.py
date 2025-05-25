@@ -99,42 +99,46 @@ else:
     )
     
     if selected_dataset:
-        col1, col2 = st.columns(2)
+        new_description = st.text_area(
+            "Dataset Description",
+            value=selected_dataset['description'] or "",
+            key=f"desc_{selected_dataset['id']}",
+            help="Add or update the description for this dataset"
+        )
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
         
         with col1:
-            if st.button("Download Dataset"):
-                with st.spinner("Downloading dataset..."):
-                    df = download_dataset_from_s3(selected_dataset['s3_key'])
-                    if df is not None:
-                        st.download_button(
-                            "Click to download CSV",
-                            df.to_csv(index=False).encode('utf-8'),
-                            file_name=selected_dataset['name'],
-                            mime='text/csv'
-                        )
-        
-        with col2:
-            new_description = st.text_area(
-                "Update description",
-                value=selected_dataset['description'] or "",
-                key=f"desc_{selected_dataset['id']}"
-            )
-            if st.button("Update Description"):
+            if st.button("📝 Update Description", use_container_width=True):
                 if db.update_dataset_description(selected_dataset['id'], new_description):
                     st.success("Description updated!")
                     st.rerun()
                 else:
                     st.error("Failed to update description")
         
-        if st.button("Delete Dataset", type="primary"):
-            try:
-                s3_client = S3Client()
-                s3_client.delete_object(selected_dataset['s3_key'])
-                
-                if db.delete_dataset(selected_dataset['id']):
-                    st.success("Dataset deleted successfully from both S3 and database!")
-                    st.rerun()
-                else:
-                    st.error("Failed to delete dataset from database")
-            except Exception as e:
-                st.error(f"Error deleting dataset: {str(e)}") 
+        with col2:
+            if st.button("⬇️ Download Dataset", use_container_width=True):
+                with st.spinner("Downloading dataset..."):
+                    df = download_dataset_from_s3(selected_dataset['s3_key'])
+                    if df is not None:
+                        st.download_button(
+                            "📥 Click to download CSV",
+                            df.to_csv(index=False).encode('utf-8'),
+                            file_name=selected_dataset['name'],
+                            mime='text/csv',
+                            use_container_width=True
+                        )
+        
+        with col3:
+            if st.button("🗑️ Delete Dataset", type="primary", use_container_width=True):
+                try:
+                    s3_client = S3Client()
+                    s3_client.delete_object(selected_dataset['s3_key'])
+                    
+                    if db.delete_dataset(selected_dataset['id']):
+                        st.success("Dataset deleted successfully from both S3 and database!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete dataset from database")
+                except Exception as e:
+                    st.error(f"Error deleting dataset: {str(e)}") 
