@@ -1,0 +1,51 @@
+text,my_label
+"The quick brown fox jumps over the lazy dog",animals
+"A cat sits on the windowsill watching birds",animals
+"Python is a popular programming language",programming
+"JavaScript is used for web development",programming
+"Cooking pasta requires boiling water",cooking
+"Baking bread needs flour and yeast",cooking
+"Mountains are tall natural formations",nature
+"Oceans cover most of Earth's surface",nature
+"Trains run on railway tracks",transport
+"Cars need fuel to operate",transport
+"Dogs are loyal companions to humans",animals
+"Birds migrate south for the winter",animals
+"Lions hunt in prides on the savanna",animals
+"Fish swim in schools for protection",animals
+"Java is an object-oriented programming language",programming
+"C++ is used for system programming",programming
+"Ruby is known for its elegant syntax",programming
+"TypeScript adds static typing to JavaScript",programming
+"Making pizza requires kneading dough",cooking
+"Grilling meat needs proper temperature control",cooking
+"Stir-frying vegetables keeps them crisp",cooking
+"Baking cookies needs precise measurements",cooking
+"Forests are home to diverse wildlife",nature
+"Deserts have extreme temperature variations",nature
+"Rivers carve valleys through mountains",nature
+"Volcanoes can erupt with molten lava",nature
+"Airplanes fly through the sky",transport
+"Buses transport many passengers",transport
+"Ships sail across the ocean",transport
+"Bicycles are eco-friendly transport",transport
+"Machine learning uses neural networks",programming
+"Databases store structured information",programming
+"Cloud computing enables remote access",programming
+"Mobile apps run on smartphones",programming
+"Making sushi requires fresh ingredients",cooking
+"Brewing coffee needs proper grinding",cooking
+"Making wine involves fermentation",cooking
+"Baking cakes requires precise timing",cooking
+"Rainforests have high biodiversity",nature
+"Arctic regions have polar bears",nature
+"Coral reefs support marine life",nature
+"Grasslands are home to grazing animals",nature
+"Electric cars use batteries",transport
+"Subways run underground in cities",transport
+"Helicopters can hover in place",transport
+"Trams run on city streets",transport
+"Whales are the largest marine mammals",animals
+"Bees pollinate flowers and make honey",animals
+"Penguins live in cold climates",animals
+"Elephants have long memories",animals 

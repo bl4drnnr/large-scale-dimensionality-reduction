@@ -1,0 +1,66 @@
+services:
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+    depends_on: [otel-collector]
+    networks:
+      - internal
+    profiles:
+      - database
+      - full-app
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ${PWD}/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    networks:
+      - internal
+    profiles:
+      - database
+      - full-app
+
+  server:
+    image: chromadb/chroma
+    volumes:
+      - ./chroma_data:/data
+    ports:
+      - "8800:8000"
+    networks:
+      - internal
+    environment:
+      - CHROMA_OPEN_TELEMETRY__ENDPOINT=http://otel-collector:4317/
+      - CHROMA_OPEN_TELEMETRY__SERVICE_NAME=chroma
+    depends_on:
+      - otel-collector
+      - zipkin
+    profiles:
+      - database
+      - full-app
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: streamlit run src/text_embedding_visualization_dashboard/frontend/frontend.py --server.port=8501
+    volumes:
+       - ./:/usr/src/app
+    ports:
+      - "8501:8501"
+    image: visualizationapp:latest
+    networks:
+      - internal
+    environment:
+      - CHROMA_HOST=server
+      - CHROMA_PORT=8000
+    depends_on:
+      - server
+    profiles:
+      - full-app
+
+networks:
+  internal:
+
+volumes:
+  chroma_data:
