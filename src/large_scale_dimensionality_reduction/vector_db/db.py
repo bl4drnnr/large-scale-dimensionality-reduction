@@ -18,7 +18,6 @@ class VectorDB:
                 host=cfg.CHROMA_HOST,
                 port=cfg.CHROMA_PORT,
             )
-            # Test connection
             self.client.heartbeat()
             logger.info("Successfully connected to ChromaDB")
         except Exception as e:
@@ -56,7 +55,6 @@ class VectorDB:
         :return:
         """
         try:
-            # Check if collection exists
             existing_collections = self.get_all_collections()
             collection_names = [elem.name for elem in existing_collections]
             
@@ -64,21 +62,18 @@ class VectorDB:
                 logger.info(f"Collection {name} already exists.")
                 return
 
-            # Prepare collection metadata
             collection_metadata = metadata or {"created": str(datetime.now())}
             if "created" not in collection_metadata:
                 collection_metadata["created"] = str(datetime.now())
             
-            # Create collection with explicit configuration
             logger.info(f"Creating collection {name} with distance metric: {distance}")
             self.client.create_collection(
                 name=name,
                 metadata=collection_metadata,
-                embedding_function=None,  # We'll add embeddings separately
-                get_or_create=True,  # This ensures we don't get errors if collection exists
+                embedding_function=None,
+                get_or_create=True,
             )
             
-            # Verify collection was created
             created_collection = self.get_collection(name)
             if created_collection is None:
                 raise Exception(f"Collection {name} was not created successfully")
@@ -87,7 +82,6 @@ class VectorDB:
             
         except Exception as e:
             logger.error(f"Error creating collection {name}: {str(e)}")
-            # Log additional connection info for debugging
             try:
                 logger.info(f"ChromaDB connection status: {self.client.heartbeat()}")
             except Exception as heartbeat_error:

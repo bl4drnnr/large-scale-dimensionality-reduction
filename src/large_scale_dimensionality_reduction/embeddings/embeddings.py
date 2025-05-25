@@ -41,14 +41,12 @@ class Embeddings:
         logger.info(f"Total texts to process: {len(texts)}")
         
         try:
-            # Validate and clean texts
             texts = [text for text in texts if text and text.strip()]
             logger.info(f"Valid texts after cleaning: {len(texts)}")
             
             if not texts:
                 raise ValueError("No valid texts provided for batch processing.")
 
-            # Create collection
             try:
                 logger.info(f"Creating collection: {collection_name}")
                 self.vector_db.add_collection(name=collection_name)
@@ -76,7 +74,6 @@ class Embeddings:
                         logger.info(f"Processing batch {i+1}/{num_batches} with {len(batch_texts)} texts")
                         status_text.text(f"Processing batch {i+1}/{num_batches}...")
 
-                        # Generate embeddings
                         try:
                             embeddings = self.generate_embedding(batch_texts)
                             logger.info(f"Generated embeddings for batch {i+1}")
@@ -84,11 +81,9 @@ class Embeddings:
                             logger.error(f"Error generating embeddings for batch {i+1}: {str(e)}")
                             raise
 
-                        # Prepare metadata
                         if batch_metadatas is None:
                             batch_metadatas = [{"source": "batch_process"} for _ in batch_texts]
                         
-                        # Add to collection
                         try:
                             logger.info(f"Adding batch {i+1} to collection {collection_name}")
                             self.vector_db.add_items_to_collection(
