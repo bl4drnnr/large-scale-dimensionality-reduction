@@ -35,9 +35,43 @@ source .venv/bin/activate
 uv sync
 ```
 
-Once the project is set up, you can start it:
+Once the project is set up, you need to create the `.env` file in the root of the project and put the following information:
+
+```txt
+CHROMA_HOST=<IP address>
+CHROMA_PORT=8000
+
+AWS_SECRET_ACCESS_KEY=<your aws secret key>
+AWS_ACCESS_KEY_ID=<your aws secret id>
+AWS_REGION=<aws region>
+S3_BUCKET_NAME=<bucket name>
+```
+
+The very last step that needs to be done before you can start the project is going to be the setup of the ChromaDB in the cloud (AWS in our case). In order to do that you need to run the following commands in your terminal using AWS CLI:
 
 ```sh
-docker-compose up server
-streamlit run src/text_embedding_visualization_dashboard/frontend/frontend.py
+# This is going to set up the cloudformation in the AWS. Instead of template URL you can see chroma_aws_cloudformation.json in the root folder of the project.
+aws cloudformation create-stack --stack-name my-chroma-stack --template-url https://s3.amazonaws.com/public.trychroma.com/cloudformation/latest/chroma.cf.json
+
+# Using this command you will be able to obtain an IP address that you can place in the .env file
+aws cloudformation describe-stacks --stack-name my-chroma-stack --query 'Stacks[0].Outputs'
 ```
+
+The CloudFormation template allows you to pass particular key/value pairs to override aspects of the stack. Available keys are:
+
+- `InstanceType` - the AWS instance type to run (default: `t3.small`)
+- `KeyName` - the AWS EC2 KeyPair to use, allowing to access the instance via SSH (default: `none`)
+
+To set a CloudFormation stack's parameters using the AWS CLI, use the `--parameters` command line option. Parameters must be specified using the format `ParameterName={parameter},ParameterValue={value}`.
+
+To get more information on how you can set up a ChromaDB in the cloud, please, check out [ChromaDB AWS Deployment](https://docs.trychroma.com/production/cloud-providers/aws) in the [References](#references) section.
+
+And then, simple start the project (from the root folder or you can start [`frontend.py`](src/large_scale_dimensionality_reduction/frontend/frontend.py) directly):
+
+```sh
+streamlit run src/large_scale_dimensionality_reduction/frontend/frontend.py
+```
+
+# References
+
+- [ChromaDB AWS Deployment](https://docs.trychroma.com/production/cloud-providers/aws)

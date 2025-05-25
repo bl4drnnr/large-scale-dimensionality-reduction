@@ -77,6 +77,25 @@ st.sidebar.markdown("""
         </button>
     </a>
 </div>
+<div style='text-align: center; margin-bottom: 20px;'>
+    <a href='/datasets' target='_self' style='text-decoration: none;'>
+        <button style='
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        '>
+            📊 View Datasets
+        </button>
+    </a>
+</div>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
@@ -132,14 +151,23 @@ if dataset_option == "Upload your own data":
             help="Specify which column contains the labels for your texts. This column should contain categorical values that will be used to color the visualization."
         )
         
+        description = st.text_area(
+            "Dataset Description (optional)",
+            help="Add a description to help identify this dataset later."
+        )
+        
         if st.button("Process Dataset", disabled=st.session_state.is_processing):
             if label_column not in df.columns:
                 st.error(f"Column '{label_column}' not found in the dataset. Please check the column name and try again.")
             else:
-                dataset_name = create_embeddings(st.session_state.embeddings_instance, uploaded_file, label_column)
+                dataset_name = create_embeddings(
+                    st.session_state.embeddings_instance,
+                    uploaded_file,
+                    label_column,
+                    description
+                )
                 st.success("Dataset processed successfully!")
-                st.experimental_set_query_params(dataset_option="Existing dataset")
-                st.rerun()
+                st.query_params["dataset_option"] = "Existing dataset"
 
 
 if dataset_option == "Existing dataset":
@@ -289,3 +317,26 @@ if embeddings is not None and st.session_state.current_reduction is not None:
     with tab3D:
         fig3D = plot_reduced_embeddings(st.session_state.current_reduction, labels, dimensionality_reduction_option, type="3D")
         st.plotly_chart(fig3D, use_container_width=True, key="3D")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("ChromaDB Collections")
+try:
+    collections = db.get_all_collections()
+    if collections:
+        st.sidebar.write("Available collections:")
+        for collection in collections:
+            col1, col2 = st.sidebar.columns([4, 1])
+            with col1:
+                st.write(f"- {collection.name}", help=f"Collection: {collection.name}")
+            with col2:
+                if st.button("x", key=f"delete_{collection.name}", help=f"Delete {collection.name}"):
+                    try:
+                        db.delete_collection(collection.name)
+                        st.sidebar.success(f"Deleted {collection.name}")
+                        st.rerun()
+                    except Exception as delete_error:
+                        st.sidebar.error(f"Error: {str(delete_error)}")
+    else:
+        st.sidebar.info("No collections found in ChromaDB")
+except Exception as e:
+    st.sidebar.error(f"Error fetching collections: {str(e)}")

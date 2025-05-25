@@ -52,6 +52,25 @@ st.sidebar.markdown("""
         </button>
     </a>
 </div>
+<div style='text-align: center; margin-bottom: 20px;'>
+    <a href='/datasets' target='_self' style='text-decoration: none;'>
+        <button style='
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        '>
+            📊 View Datasets
+        </button>
+    </a>
+</div>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")

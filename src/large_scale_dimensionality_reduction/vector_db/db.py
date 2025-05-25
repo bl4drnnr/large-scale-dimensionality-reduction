@@ -11,10 +11,18 @@ logger = setup_logger("chroma_db-logger")
 
 class VectorDB:
     def __init__(self):
-        self.client = chromadb.HttpClient(
-            host=cfg.CHROMA_HOST,
-            port=cfg.CHROMA_PORT,
-        )
+        """Initialize ChromaDB client with connection settings."""
+        try:
+            logger.info(f"Connecting to ChromaDB at {cfg.CHROMA_HOST}:{cfg.CHROMA_PORT}")
+            self.client = chromadb.HttpClient(
+                host=cfg.CHROMA_HOST,
+                port=cfg.CHROMA_PORT,
+            )
+            self.client.heartbeat()
+            logger.info("Successfully connected to ChromaDB")
+        except Exception as e:
+            logger.error(f"Failed to connect to ChromaDB: {str(e)}")
+            raise
 
     def get_all_collections(self) -> Sequence[Collection]:
         """
@@ -46,21 +54,34 @@ class VectorDB:
         :param metadata: Optional metadata to store with the collection
         :return:
         """
-        if name not in [elem.name for elem in self.get_all_collections()]:
-            collection_metadata = metadata or {"created": str(datetime.now())}
-            if "created" not in collection_metadata:
-                collection_metadata["created"] = str(datetime.now())
-                
+        existing_collections = self.get_all_collections()
+        collection_names = [elem.name for elem in existing_collections]
+        
+        if name in collection_names:
+            logger.info(f"Collection {name} already exists.")
+            return
+
+        collection_metadata = metadata or {"created": str(datetime.now())}
+        if "created" not in collection_metadata:
+            collection_metadata["created"] = str(datetime.now())
+        
+        try:
             self.client.create_collection(
                 name=name,
                 metadata=collection_metadata,
-                configuration={
-                    "hnsw": {"space": distance},
-                },
+                embedding_function=None,
+                get_or_create=True,
             )
-            logger.info(f"Created collection {name}")
-        else:
-            logger.info(f"Collection {name} already exists.")
+            
+            created_collection = self.get_collection(name)
+            if created_collection is None:
+                raise Exception(f"Collection {name} was not created successfully")
+                
+            logger.info(f"Successfully created collection {name}")
+            
+        except Exception as e:
+            logger.error(f"Error creating collection {name}: {str(e)}")
+            raise
 
     def delete_collection(self, name: str) -> None:
         """

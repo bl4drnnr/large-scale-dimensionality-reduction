@@ -13,11 +13,13 @@ import pickle
 
 from large_scale_dimensionality_reduction.vector_db import VectorDB
 from large_scale_dimensionality_reduction.embeddings import Embeddings
+from large_scale_dimensionality_reduction.utils import S3Client, DatasetDB
 
 
-def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_column: str = "label") -> str | None:
+def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_column: str = "label", description: str = None) -> str | None:
     """
     Creates embeddings from uploaded CSV file and adds them to the vector database.
+    Also uploads the file to S3 for backup and stores metadata in SQLite.
 
     Parameters:
     embeddings_instance : Embeddings
@@ -30,42 +32,107 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
     label_column : str
         Name of the column containing the labels. Defaults to "label". If provided, this name will be used
         as the key in the metadata dictionary.
+    description : str, optional
+        Optional description of the dataset.
 
     Returns:
     str or None
         The name of the created collection, or None if there was an error.
     """
+    try:
+        df = pd.read_csv(uploaded_file)
 
-    df = pd.read_csv(uploaded_file)
+        if "text" not in df.columns:
+            st.error("The CSV file must contain a 'text' column.")
+            return None
 
-    if "text" not in df.columns:
-        st.error("The CSV file must contain a 'text' column.")
+        if label_column not in df.columns:
+            st.error(f"The CSV file must contain a '{label_column}' column.")
+            return None
+        
+        collection_name = uploaded_file.name[:-4]
+        
+        labels = df[label_column].fillna("unknown").astype(str).tolist()
+        texts = df["text"].tolist()
+        ids = [f"doc_{i}" for i in range(len(texts))] if "id" not in df.columns else df["id"].tolist()
+        metadatas = [{label_column: label} for label in labels]
+
+        s3_key = None
+        try:
+            s3_client = S3Client()
+            s3_key = s3_client.upload_dataframe(
+                df=df,
+                filename=uploaded_file.name,
+                prefix="raw_data"
+            )
+            st.success(f"Dataset uploaded to S3: {s3_key}")
+        except Exception as e:
+            st.error(f"Failed to upload dataset to S3: {str(e)}")
+            return None
+
+        if s3_key:
+            try:
+                db = DatasetDB()
+                db.add_dataset(
+                    name=uploaded_file.name,
+                    s3_key=s3_key,
+                    collection_name=collection_name,
+                    label_column=label_column,
+                    num_rows=len(df),
+                    description=description
+                )
+                st.success("Dataset information stored in local database")
+            except Exception as e:
+                st.error(f"Failed to store dataset information in local database: {str(e)}")
+                return None
+
+        try:
+            embeddings_instance.batch_process_texts(
+                texts=texts,
+                collection_name=collection_name,
+                metadatas=metadatas,
+                ids=ids,
+                batch_size=5000
+            )
+            st.success(f"Embeddings stored in ChromaDB collection: {collection_name}")
+        except Exception as e:
+            st.error(f"Failed to store embeddings in ChromaDB: {str(e)}")
+            if s3_key:
+                try:
+                    db = DatasetDB()
+                    db.delete_dataset(db.get_dataset_by_s3_key(s3_key)["id"])
+                    
+                    s3_client = S3Client()
+                    s3_client.delete_object(s3_key)
+                    st.info(f"Cleaned up: removed dataset from S3 and local database")
+                except Exception as cleanup_error:
+                    st.warning(f"Failed to clean up resources: {str(cleanup_error)}")
+            return None
+
+        return collection_name
+
+    except Exception as e:
+        st.error(f"Error processing dataset: {str(e)}")
         return None
 
-    if label_column not in df.columns:
-        st.error(f"The CSV file must contain a '{label_column}' column.")
+
+def download_dataset_from_s3(s3_key: str) -> pd.DataFrame | None:
+    """
+    Download a dataset from S3.
+    
+    Args:
+        s3_key: The S3 key of the dataset to download
+        
+    Returns:
+        pd.DataFrame | None: The downloaded dataset or None if download failed
+    """
+    try:
+        s3_client = S3Client()
+        df = s3_client.download_dataframe(s3_key)
+        return df
+    except Exception as e:
+        st.error(f"Failed to download dataset from S3: {str(e)}")
         return None
-
-    labels = df[label_column].fillna("unknown").astype(str).tolist()
-    texts = df["text"].tolist()
-    collection_name = uploaded_file.name[:-4]
-    
-    if "id" not in df.columns:
-        ids = [f"doc_{i}" for i in range(len(texts))]
-    else:
-        ids = df["id"].tolist()
-    
-    metadatas = [{label_column: label} for label in labels]
-    
-    embeddings_instance.batch_process_texts(
-        texts=texts,
-        collection_name=collection_name,
-        metadatas=metadatas,
-        ids=ids,
-        batch_size=5000
-    )
-
-    return collection_name
 
 
 def get_embeddings(db: VectorDB, dataset_name: str) -> Tuple[np.ndarray, list[str]]:
