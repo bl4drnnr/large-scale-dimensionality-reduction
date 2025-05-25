@@ -1,15 +1,15 @@
 import streamlit as st
 import pandas as pd
 
-from text_embedding_visualization_dashboard.frontend.utils import (
+from large_scale_dimensionality_reduction.frontend.utils import (
     apply_dimensionality_reduction,
     get_embeddings,
     create_embeddings,
     save_reduction_results,
 )
-from text_embedding_visualization_dashboard.frontend.visualizations import plot_reduced_embeddings
-from text_embedding_visualization_dashboard.vector_db import VectorDB
-from text_embedding_visualization_dashboard.embeddings import Embeddings
+from large_scale_dimensionality_reduction.frontend.visualizations import plot_reduced_embeddings
+from large_scale_dimensionality_reduction.vector_db import VectorDB
+from large_scale_dimensionality_reduction.embeddings import Embeddings
 
 if "is_processing" not in st.session_state:
     st.session_state.is_processing = False

@@ -11,8 +11,8 @@ import json
 from pathlib import Path
 import pickle
 
-from text_embedding_visualization_dashboard.vector_db import VectorDB
-from text_embedding_visualization_dashboard.embeddings import Embeddings
+from large_scale_dimensionality_reduction.vector_db import VectorDB
+from large_scale_dimensionality_reduction.embeddings import Embeddings
 
 
 def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_column: str = "label") -> str | None:

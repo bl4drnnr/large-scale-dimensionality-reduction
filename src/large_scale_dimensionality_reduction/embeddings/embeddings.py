@@ -1,7 +1,7 @@
 from typing import List, Optional
 from sentence_transformers import SentenceTransformer
 import streamlit as st
-from text_embedding_visualization_dashboard.vector_db.db import VectorDB
+from large_scale_dimensionality_reduction.vector_db.db import VectorDB
 
 
 class Embeddings:

@@ -43,7 +43,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: streamlit run src/text_embedding_visualization_dashboard/frontend/frontend.py --server.port=8501
+    command: streamlit run src/large_scale_dimensionality_reduction/frontend/frontend.py --server.port=8501
     volumes:
        - ./:/usr/src/app
     ports:

@@ -1,7 +1,7 @@
 import streamlit as st
 from pathlib import Path
-from text_embedding_visualization_dashboard.frontend.utils import load_reduction_results
-from text_embedding_visualization_dashboard.frontend.visualizations import plot_reduced_embeddings
+from large_scale_dimensionality_reduction.frontend.utils import load_reduction_results
+from large_scale_dimensionality_reduction.frontend.visualizations import plot_reduced_embeddings
 
 st.set_page_config(
     page_title="Saved Reductions",

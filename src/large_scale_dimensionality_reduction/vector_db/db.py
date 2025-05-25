@@ -1,6 +1,6 @@
 import chromadb
-from text_embedding_visualization_dashboard.utils import setup_logger, cfg
-from text_embedding_visualization_dashboard.models.vectordb_models import QUERY_INCLUDE, GET_INCLUDE
+from large_scale_dimensionality_reduction.utils import setup_logger, cfg
+from large_scale_dimensionality_reduction.models.vectordb_models import QUERY_INCLUDE, GET_INCLUDE
 from datetime import datetime
 from typing import Literal, Sequence
 from chromadb.api import Collection, QueryResult, GetResult
