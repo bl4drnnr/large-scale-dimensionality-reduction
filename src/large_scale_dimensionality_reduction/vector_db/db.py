@@ -54,19 +54,18 @@ class VectorDB:
         :param metadata: Optional metadata to store with the collection
         :return:
         """
-        try:
-            existing_collections = self.get_all_collections()
-            collection_names = [elem.name for elem in existing_collections]
-            
-            if name in collection_names:
-                logger.info(f"Collection {name} already exists.")
-                return
+        existing_collections = self.get_all_collections()
+        collection_names = [elem.name for elem in existing_collections]
+        
+        if name in collection_names:
+            logger.info(f"Collection {name} already exists.")
+            return
 
-            collection_metadata = metadata or {"created": str(datetime.now())}
-            if "created" not in collection_metadata:
-                collection_metadata["created"] = str(datetime.now())
-            
-            logger.info(f"Creating collection {name} with distance metric: {distance}")
+        collection_metadata = metadata or {"created": str(datetime.now())}
+        if "created" not in collection_metadata:
+            collection_metadata["created"] = str(datetime.now())
+        
+        try:
             self.client.create_collection(
                 name=name,
                 metadata=collection_metadata,
@@ -82,10 +81,6 @@ class VectorDB:
             
         except Exception as e:
             logger.error(f"Error creating collection {name}: {str(e)}")
-            try:
-                logger.info(f"ChromaDB connection status: {self.client.heartbeat()}")
-            except Exception as heartbeat_error:
-                logger.error(f"ChromaDB heartbeat failed: {str(heartbeat_error)}")
             raise
 
     def delete_collection(self, name: str) -> None:
