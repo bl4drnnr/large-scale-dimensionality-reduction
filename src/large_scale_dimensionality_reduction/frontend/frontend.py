@@ -317,3 +317,26 @@ if embeddings is not None and st.session_state.current_reduction is not None:
     with tab3D:
         fig3D = plot_reduced_embeddings(st.session_state.current_reduction, labels, dimensionality_reduction_option, type="3D")
         st.plotly_chart(fig3D, use_container_width=True, key="3D")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("ChromaDB Collections")
+try:
+    collections = db.get_all_collections()
+    if collections:
+        st.sidebar.write("Available collections:")
+        for collection in collections:
+            col1, col2 = st.sidebar.columns([4, 1])
+            with col1:
+                st.write(f"- {collection.name}", help=f"Collection: {collection.name}")
+            with col2:
+                if st.button("x", key=f"delete_{collection.name}", help=f"Delete {collection.name}"):
+                    try:
+                        db.delete_collection(collection.name)
+                        st.sidebar.success(f"Deleted {collection.name}")
+                        st.rerun()
+                    except Exception as delete_error:
+                        st.sidebar.error(f"Error: {str(delete_error)}")
+    else:
+        st.sidebar.info("No collections found in ChromaDB")
+except Exception as e:
+    st.sidebar.error(f"Error fetching collections: {str(e)}")

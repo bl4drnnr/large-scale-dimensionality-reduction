@@ -49,6 +49,13 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
         if label_column not in df.columns:
             st.error(f"The CSV file must contain a '{label_column}' column.")
             return None
+        
+        collection_name = uploaded_file.name[:-4]
+        
+        labels = df[label_column].fillna("unknown").astype(str).tolist()
+        texts = df["text"].tolist()
+        ids = [f"doc_{i}" for i in range(len(texts))] if "id" not in df.columns else df["id"].tolist()
+        metadatas = [{label_column: label} for label in labels]
 
         s3_key = None
         try:
@@ -60,9 +67,9 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
             )
             st.success(f"Dataset uploaded to S3: {s3_key}")
         except Exception as e:
-            st.warning(f"Failed to upload dataset to S3: {str(e)}")
+            st.error(f"Failed to upload dataset to S3: {str(e)}")
+            return None
 
-        
         if s3_key:
             try:
                 db = DatasetDB()
@@ -76,29 +83,34 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
                 )
                 st.success("Dataset information stored in local database")
             except Exception as e:
-                st.warning(f"Failed to store dataset information in local database: {str(e)}")
+                st.error(f"Failed to store dataset information in local database: {str(e)}")
+                return None
 
-        labels = df[label_column].fillna("unknown").astype(str).tolist()
-        texts = df["text"].tolist()
-        collection_name = uploaded_file.name[:-4]
-        
-        if "id" not in df.columns:
-            ids = [f"doc_{i}" for i in range(len(texts))]
-        else:
-            ids = df["id"].tolist()
-        
-        metadatas = [{label_column: label} for label in labels]
-        
-        embeddings_instance.batch_process_texts(
-            texts=texts,
-            collection_name=collection_name,
-            metadatas=metadatas,
-            ids=ids,
-            batch_size=5000
-        )
+        try:
+            embeddings_instance.batch_process_texts(
+                texts=texts,
+                collection_name=collection_name,
+                metadatas=metadatas,
+                ids=ids,
+                batch_size=5000
+            )
+            st.success(f"Embeddings stored in ChromaDB collection: {collection_name}")
+        except Exception as e:
+            st.error(f"Failed to store embeddings in ChromaDB: {str(e)}")
+            if s3_key:
+                try:
+                    db = DatasetDB()
+                    db.delete_dataset(db.get_dataset_by_s3_key(s3_key)["id"])
+                    
+                    s3_client = S3Client()
+                    s3_client.delete_object(s3_key)
+                    st.info(f"Cleaned up: removed dataset from S3 and local database")
+                except Exception as cleanup_error:
+                    st.warning(f"Failed to clean up resources: {str(cleanup_error)}")
+            return None
 
         return collection_name
-        
+
     except Exception as e:
         st.error(f"Error processing dataset: {str(e)}")
         return None

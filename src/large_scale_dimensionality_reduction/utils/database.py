@@ -156,4 +156,33 @@ class DatasetDB:
                 (description, dataset_id)
             )
             conn.commit()
-            return cursor.rowcount > 0 
+            return cursor.rowcount > 0
+
+    def get_dataset_by_s3_key(self, s3_key: str) -> Optional[Dict]:
+        """
+        Get dataset information by S3 key.
+        
+        Args:
+            s3_key: S3 key of the dataset
+            
+        Returns:
+            Optional[Dict]: Dataset information or None if not found
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT * FROM datasets WHERE s3_key = ?
+            """, (s3_key,))
+            row = cursor.fetchone()
+            
+            if row:
+                return {
+                    "id": row[0],
+                    "name": row[1],
+                    "s3_key": row[2],
+                    "collection_name": row[3],
+                    "label_column": row[4],
+                    "num_rows": row[5],
+                    "uploaded_at": row[6],
+                    "description": row[7]
+                }
+            return None 

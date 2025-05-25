@@ -34,6 +34,23 @@ class S3Client:
             else:
                 raise
 
+    def delete_object(self, s3_key: str) -> None:
+        """
+        Delete an object from S3.
+        
+        Args:
+            s3_key: The S3 key (path) of the object to delete
+        """
+        try:
+            self.s3_client.delete_object(
+                Bucket=self.bucket_name,
+                Key=s3_key
+            )
+            logger.info(f"Successfully deleted {s3_key} from S3 bucket {self.bucket_name}")
+        except ClientError as e:
+            logger.error(f"Error deleting {s3_key} from S3: {str(e)}")
+            raise
+
     def upload_dataframe(self, df: pd.DataFrame, filename: str, prefix: Optional[str] = None) -> str:
         """
         Upload a pandas DataFrame to S3 as a CSV file.

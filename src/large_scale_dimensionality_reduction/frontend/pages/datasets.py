@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 from large_scale_dimensionality_reduction.utils import DatasetDB
 from large_scale_dimensionality_reduction.frontend.utils import download_dataset_from_s3
+from large_scale_dimensionality_reduction.utils import S3Client
 
 st.set_page_config(
     page_title="Datasets - Text Embedding Visualization Dashboard",
@@ -21,7 +21,6 @@ st.markdown("""
 
 st.title("📚 Datasets")
 
-# Add navigation in sidebar
 st.sidebar.title("Navigation")
 st.sidebar.markdown("""
 <div style='text-align: center; margin-bottom: 20px;'>
@@ -64,23 +63,18 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Initialize database
 db = DatasetDB()
 
-# Get all datasets
 datasets = db.get_all_datasets()
 
 if not datasets:
     st.info("No datasets have been uploaded yet.")
 else:
-    # Create a table of datasets
     st.subheader("Available Datasets")
     
-    # Convert to DataFrame for better display
     df_datasets = pd.DataFrame(datasets)
     df_datasets['uploaded_at'] = pd.to_datetime(df_datasets['uploaded_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
     
-    # Display the table
     st.dataframe(
         df_datasets[[
             'name', 'collection_name', 'label_column',
@@ -96,10 +90,8 @@ else:
         use_container_width=True
     )
     
-    # Dataset actions
     st.subheader("Dataset Actions")
     
-    # Select a dataset
     selected_dataset = st.selectbox(
         "Select a dataset to download",
         options=datasets,
@@ -122,7 +114,6 @@ else:
                         )
         
         with col2:
-            # Update description
             new_description = st.text_area(
                 "Update description",
                 value=selected_dataset['description'] or "",
@@ -135,11 +126,15 @@ else:
                 else:
                     st.error("Failed to update description")
         
-        # Delete dataset
         if st.button("Delete Dataset", type="primary"):
-            if st.checkbox("I confirm I want to delete this dataset"):
+            try:
+                s3_client = S3Client()
+                s3_client.delete_object(selected_dataset['s3_key'])
+                
                 if db.delete_dataset(selected_dataset['id']):
-                    st.success("Dataset deleted!")
+                    st.success("Dataset deleted successfully from both S3 and database!")
                     st.rerun()
                 else:
-                    st.error("Failed to delete dataset") 
+                    st.error("Failed to delete dataset from database")
+            except Exception as e:
+                st.error(f"Error deleting dataset: {str(e)}") 
