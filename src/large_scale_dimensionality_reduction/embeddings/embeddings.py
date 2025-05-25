@@ -31,6 +31,7 @@ class Embeddings:
         :param batch_size: Number of samples per batch.
         """
         texts = [text for text in texts if text and text.strip()]
+        
         if not texts:
             raise ValueError("No valid texts provided for batch processing.")
 

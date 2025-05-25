@@ -77,6 +77,25 @@ st.sidebar.markdown("""
         </button>
     </a>
 </div>
+<div style='text-align: center; margin-bottom: 20px;'>
+    <a href='/datasets' target='_self' style='text-decoration: none;'>
+        <button style='
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        '>
+            📊 View Datasets
+        </button>
+    </a>
+</div>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
@@ -132,14 +151,23 @@ if dataset_option == "Upload your own data":
             help="Specify which column contains the labels for your texts. This column should contain categorical values that will be used to color the visualization."
         )
         
+        description = st.text_area(
+            "Dataset Description (optional)",
+            help="Add a description to help identify this dataset later."
+        )
+        
         if st.button("Process Dataset", disabled=st.session_state.is_processing):
             if label_column not in df.columns:
                 st.error(f"Column '{label_column}' not found in the dataset. Please check the column name and try again.")
             else:
-                dataset_name = create_embeddings(st.session_state.embeddings_instance, uploaded_file, label_column)
+                dataset_name = create_embeddings(
+                    st.session_state.embeddings_instance,
+                    uploaded_file,
+                    label_column,
+                    description
+                )
                 st.success("Dataset processed successfully!")
-                st.experimental_set_query_params(dataset_option="Existing dataset")
-                st.rerun()
+                st.query_params["dataset_option"] = "Existing dataset"
 
 
 if dataset_option == "Existing dataset":

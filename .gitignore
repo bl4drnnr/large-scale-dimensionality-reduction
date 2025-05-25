@@ -183,3 +183,4 @@ uv.lock
 .DS_Store
 
 /saved_reductions/*
+datasets.db
