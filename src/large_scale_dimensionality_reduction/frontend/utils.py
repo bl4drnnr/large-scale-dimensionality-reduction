@@ -5,11 +5,11 @@ import pandas as pd
 import umap
 import trimap
 import pacmap
+from chromadb import GetResult
+from chromadb.api.models.Collection import Collection
 from sklearn.manifold import TSNE
 import numpy as np
 import json
-from pathlib import Path
-import pickle
 
 from large_scale_dimensionality_reduction.vector_db import VectorDB
 from large_scale_dimensionality_reduction.embeddings import Embeddings
@@ -155,7 +155,7 @@ def get_embeddings(db: VectorDB, dataset_name: str) -> Tuple[np.ndarray, list[st
     embeddings = np.array(db_collection["embeddings"])
 
     metadatas = db_collection["metadatas"]
-    
+
     if metadatas and len(metadatas) > 0:
         label_key = next(iter(metadatas[0].keys()))
         labels = [metadata.get(label_key) for metadata in metadatas]
@@ -183,7 +183,6 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
         The reduced embeddings with shape (n_samples, n_components).
     """
 
-    random_state = 42
     progress_bar = st.progress(0)
     status_text = st.empty()
 
@@ -195,7 +194,6 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
                 n_neighbors=params["n_neighbors"],
                 min_dist=params["min_dist"],
                 n_components=params["n_components"],
-                random_state=random_state,
             )
             status_text.text("Computing UMAP projection...")
             progress_bar.progress(30)
@@ -209,7 +207,6 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
                 n_components=params["n_components"],
                 perplexity=params["perplexity"],
                 max_iter=params["max_iter"],
-                random_state=random_state,
             )
             status_text.text("Computing t-SNE projection (this may take a while)...")
             progress_bar.progress(30)
@@ -220,9 +217,7 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
             status_text.text("Initializing PaCMAP...")
             progress_bar.progress(10)
             reducer = pacmap.PaCMAP(
-                n_neighbors=params["n_neighbors"], 
-                n_components=params["n_components"], 
-                random_state=random_state
+                n_neighbors=params["n_neighbors"], n_components=params["n_components"]
             )
             status_text.text("Computing PaCMAP projection...")
             progress_bar.progress(30)
@@ -246,73 +241,61 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
         return reduced
 
     finally:
+
         def cleanup():
             import time
+
             time.sleep(1)
             progress_bar.empty()
             status_text.empty()
-        
+
         cleanup()
 
 
 def save_reduction_results(
+    db: VectorDB,
     reduced_embeddings: np.ndarray,
     labels: list[str],
-    method: str,
-    params: dict,
-    filename: str
+    collection_name: str,
+    type="reduced",
+    method: str = None,
+    params: dict = None,
 ) -> None:
     """
-    Save dimensionality reduction results to a file.
-    
-    Parameters:
-    reduced_embeddings : np.ndarray
-        The reduced embeddings (e.g., UMAP output)
-    labels : list[str]
-        The labels for each point
-    method : str
-        The dimensionality reduction method used (e.g., "UMAP")
-    params : dict
-        The parameters used for the reduction
-    filename : str
-        The name of the file to save to (without extension)
+    Save dimensionality reduction results to the vector database.
     """
-    save_dir = Path("saved_reductions")
-    save_dir.mkdir(exist_ok=True)
-    
-    data = {
-        "reduced_embeddings": reduced_embeddings,
-        "labels": labels,
-        "method": method,
-        "params": params
-    }
-    
-    with open(save_dir / f"{filename}.pkl", "wb") as f:
-        pickle.dump(data, f)
-    
-    with open(save_dir / f"{filename}_params.json", "w") as f:
-        json.dump({"method": method, "params": params}, f, indent=2)
+    metadata = {"type": type}
+    if params is not None:
+        metadata["params"] = json.dumps(params)
+    if method is not None:
+        metadata["method"] = method
+
+    db.add_collection(collection_name, metadata=metadata)
+
+    metadatas = [{"label": label} for label in labels]
+
+    db.add_reduced_to_collection(collection_name, list(reduced_embeddings), metadata=metadatas)
 
 
-def load_reduction_results(filename: str) -> tuple[np.ndarray, list[str], str, dict]:
+def load_reduction_results(db: VectorDB, collection_name: str, include=["embeddings"]) -> tuple[GetResult, Collection]:
     """
-    Load saved dimensionality reduction results.
-    
+    Load saved dimensionality reduction results from the vector database.
+
     Parameters:
-    filename : str
-        The name of the file to load (without extension)
-        
+    db : VectorDB
+        The vector database instance to load the data from.
+    collection_name : str
+        The name of the collection to load.
+    include : List[str], optional
+        List of fields to include in the result (default is ["embeddings"]).
+
     Returns:
-    tuple
-        (reduced_embeddings, labels, method, params)
+    Tuple[GetResult, Collection]
+        A tuple containing:
+        - reduction_results (GetResult): The reduced embeddings and associated metadata.
+        - collection (Collection): The collection wit
     """
-    save_dir = Path("saved_reductions")
-    with open(save_dir / f"{filename}.pkl", "rb") as f:
-        data = pickle.load(f)
-    
-    return (
-        data["reduced_embeddings"],
-        data["labels"],
-        data["method"],
-        data["params"]
-    )
+
+    reduction_results = db.get_all_items_from_collection(collection_name, include=include)
+    collection = db.get_collection(collection_name)
+    return reduction_results, collection

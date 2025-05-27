@@ -6,6 +6,7 @@ from large_scale_dimensionality_reduction.frontend.utils import (
     get_embeddings,
     create_embeddings,
     save_reduction_results,
+    load_reduction_results,
 )
 from large_scale_dimensionality_reduction.frontend.visualizations import plot_reduced_embeddings
 from large_scale_dimensionality_reduction.vector_db import VectorDB
@@ -13,6 +14,13 @@ from large_scale_dimensionality_reduction.embeddings import Embeddings
 
 if "is_processing" not in st.session_state:
     st.session_state.is_processing = False
+if "embeddings_instance" not in st.session_state:
+    st.session_state.embeddings_instance = Embeddings(VectorDB(), model_name="all-MiniLM-L6-v2")
+if "current_model" not in st.session_state:
+    st.session_state.current_model = "all-MiniLM-L6-v2"
+if "disabled" not in st.session_state:
+    st.session_state.disabled = True
+    st.session_state.custom_save_name = ""
 
 AVAILABLE_MODELS = {
     "all-mpnet-base-v2": {"speed": 2800, "size": "420 MB"},
@@ -33,19 +41,19 @@ AVAILABLE_MODELS = {
 db = VectorDB()
 
 st.set_page_config(
-    page_title="Text Embedding Visualization Dashboard",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Text Embedding Visualization Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="expanded"
 )
 
-st.markdown("""
+st.markdown(
+    """
 <style>
     [data-testid="stSidebar"] [data-testid="stSidebarNav"] {
         display: none;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 st.title("Text Embedding Visualization Dashboard")
 st.markdown("""
@@ -57,7 +65,8 @@ This application allows you to visualize text embeddings using different dimensi
 """)
 
 st.sidebar.header("Navigation")
-st.sidebar.markdown("""
+st.sidebar.markdown(
+    """
 <div style='text-align: center; margin-bottom: 20px;'>
     <a href='/saved_reductions' target='_self' style='text-decoration: none;'>
         <button style='
@@ -77,111 +86,77 @@ st.sidebar.markdown("""
         </button>
     </a>
 </div>
-<div style='text-align: center; margin-bottom: 20px;'>
-    <a href='/datasets' target='_self' style='text-decoration: none;'>
-        <button style='
-            background-color: #2196F3;
-            color: white;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            width: 100%;
-        '>
-            📊 View Datasets
-        </button>
-    </a>
-</div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 st.sidebar.markdown("---")
 st.sidebar.header("Settings")
 
-model_option = st.sidebar.selectbox(
-    "Choose an embedding model",
-    options=list(AVAILABLE_MODELS.keys()),
-    index=list(AVAILABLE_MODELS.keys()).index("all-MiniLM-L6-v2"),
-    help="Select the model to use for generating embeddings. Speed indicates sentences per second, size indicates model size.",
-    disabled=st.session_state.is_processing
-)
-
-model_specs = AVAILABLE_MODELS[model_option]
-st.sidebar.markdown(f"""
-**Model Specifications:**
-- Speed: {model_specs['speed']} sentences/sec
-- Size: {model_specs['size']}
-""")
-
-if "current_model" not in st.session_state:
-    st.session_state.current_model = model_option
-    st.session_state.embeddings_instance = Embeddings(db, model_name=model_option)
-    st.session_state.is_processing = False
-elif st.session_state.current_model != model_option:
-    st.session_state.current_model = model_option
-    st.session_state.embeddings_instance = Embeddings(db, model_name=model_option)
 
 dataset_option = st.selectbox(
-    "Choose a data source", 
-    ["Upload your own data", "Existing dataset"],
-    disabled=st.session_state.is_processing
+    "Choose a data source", ["Upload your own data", "Existing dataset"], disabled=st.session_state.is_processing
 )
 
 uploaded_file = None
 dataset_name = None
 if dataset_option == "Upload your own data":
-    uploaded_file = st.file_uploader(
-        "Upload CSV file", 
-        type=["csv"],
-        disabled=st.session_state.is_processing
+    model_option = st.selectbox(
+        "Choose an embedding model",
+        options=list(AVAILABLE_MODELS.keys()),
+        index=list(AVAILABLE_MODELS.keys()).index("all-MiniLM-L6-v2"),
+        help="Select the model to use for generating embeddings. Speed indicates sentences per second, size indicates model size.",
+        disabled=st.session_state.is_processing,
     )
+
+    model_specs = AVAILABLE_MODELS[model_option]
+    st.markdown(f"""
+    **Model Specifications:**
+    - Speed: {model_specs["speed"]} sentences/sec
+    - Size: {model_specs["size"]}
+    """)
+
+    if "current_model" not in st.session_state:
+        st.session_state.current_model = model_option
+        st.session_state.embeddings_instance = Embeddings(db, model_name=model_option)
+        st.session_state.is_processing = False
+    elif st.session_state.current_model != model_option:
+        st.session_state.current_model = model_option
+        st.session_state.embeddings_instance = Embeddings(db, model_name=model_option)
+
+    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], disabled=st.session_state.is_processing)
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
         st.write("Available columns in your dataset:")
         st.write(df.columns.tolist())
-        
+
         uploaded_file.seek(0)
-        
+
         label_column = st.text_input(
             "Enter the name of your label column",
             value="label",
-            help="Specify which column contains the labels for your texts. This column should contain categorical values that will be used to color the visualization."
+            help="Specify which column contains the labels for your texts. This column should contain categorical values that will be used to color the visualization.",
         )
-        
-        description = st.text_area(
-            "Dataset Description (optional)",
-            help="Add a description to help identify this dataset later."
-        )
-        
+
         if st.button("Process Dataset", disabled=st.session_state.is_processing):
             if label_column not in df.columns:
-                st.error(f"Column '{label_column}' not found in the dataset. Please check the column name and try again.")
-            else:
-                dataset_name = create_embeddings(
-                    st.session_state.embeddings_instance,
-                    uploaded_file,
-                    label_column,
-                    description
+                st.error(
+                    f"Column '{label_column}' not found in the dataset. Please check the column name and try again."
                 )
+            else:
+                dataset_name = create_embeddings(st.session_state.embeddings_instance, uploaded_file, label_column)
                 st.success("Dataset processed successfully!")
-                st.query_params["dataset_option"] = "Existing dataset"
-
+                st.experimental_set_query_params(dataset_option="Existing dataset")
 
 if dataset_option == "Existing dataset":
-    collections = [col.name for col in db.get_all_collections()]
-    dataset_name = st.selectbox(
-        "Choose a dataset", 
-        collections,
-        disabled=st.session_state.is_processing
-    )
+    collections = [col.name for col in db.get_all_datasets()]
+    dataset_name = st.selectbox("Choose a dataset", collections, disabled=st.session_state.is_processing)
+
 
 dimensionality_reduction_option = st.sidebar.selectbox(
     "Choose a dimensionality reduction technique",
     ["t-SNE", "UMAP", "PaCMAP", "TriMAP"],
-    disabled=st.session_state.is_processing
+    disabled=st.session_state.is_processing,
 )
 
 
@@ -199,7 +174,7 @@ if "current_reduction" not in st.session_state:
 embeddings, labels = None, None
 if dataset_name:
     embeddings, labels = get_embeddings(db, dataset_name)
-    
+
     st.sidebar.markdown("---")
     st.sidebar.subheader("Compute Reduction")
 
@@ -216,18 +191,14 @@ if dataset_size is not None:
     if dimensionality_reduction_option == "t-SNE":
         dr_params["t-SNE"] = {
             "perplexity": st.sidebar.slider(
-                "perplexity", 
-                5, 
-                min(50, dataset_size - 1), 
+                "perplexity",
+                5,
+                min(50, dataset_size - 1),
                 dr_params["t-SNE"]["perplexity"],
-                disabled=st.session_state.is_processing
+                disabled=st.session_state.is_processing,
             ),
             "max_iter": st.sidebar.slider(
-                "iterations", 
-                250, 
-                1000, 
-                dr_params["t-SNE"]["max_iter"],
-                disabled=st.session_state.is_processing
+                "iterations", 250, 1000, dr_params["t-SNE"]["max_iter"], disabled=st.session_state.is_processing
             ),
             "n_components": 3,
         }
@@ -235,19 +206,19 @@ if dataset_size is not None:
     if dimensionality_reduction_option == "UMAP":
         dr_params["UMAP"] = {
             "n_neighbors": st.sidebar.slider(
-                "n_neighbors", 
-                5, 
-                min(100, dataset_size - 1), 
+                "n_neighbors",
+                5,
+                min(100, dataset_size - 1),
                 dr_params["UMAP"]["n_neighbors"],
-                disabled=st.session_state.is_processing
+                disabled=st.session_state.is_processing,
             ),
             "min_dist": st.sidebar.slider(
-                "min_dist", 
-                0.01, 
-                0.99, 
-                dr_params["UMAP"]["min_dist"], 
+                "min_dist",
+                0.01,
+                0.99,
+                dr_params["UMAP"]["min_dist"],
                 step=0.01,
-                disabled=st.session_state.is_processing
+                disabled=st.session_state.is_processing,
             ),
             "n_components": 3,
         }
@@ -255,11 +226,11 @@ if dataset_size is not None:
     if dimensionality_reduction_option == "PaCMAP":
         dr_params["PaCMAP"] = {
             "n_neighbors": st.sidebar.slider(
-                "n_neighbors", 
-                5, 
-                min(50, dataset_size - 1), 
+                "n_neighbors",
+                5,
+                min(50, dataset_size - 1),
                 dr_params["PaCMAP"]["n_neighbors"],
-                disabled=st.session_state.is_processing
+                disabled=st.session_state.is_processing,
             ),
             "n_components": 3,
         }
@@ -267,56 +238,107 @@ if dataset_size is not None:
     if dimensionality_reduction_option == "TriMAP":
         dr_params["TriMAP"] = {
             "n_neighbors": st.sidebar.slider(
-                "n_neighbors", 
-                5, 
-                min(50, dataset_size - 1), 
+                "n_neighbors",
+                5,
+                min(50, dataset_size - 1),
                 dr_params["TriMAP"]["n_neighbors"],
-                disabled=st.session_state.is_processing
+                disabled=st.session_state.is_processing,
             ),
             "n_components": 3,
         }
 
     if st.sidebar.button("Run Dimensionality Reduction", disabled=st.session_state.is_processing):
         st.session_state.is_processing = True
-        try:
-            with st.spinner(f"Computing {dimensionality_reduction_option} projection..."):
-                st.session_state.current_reduction = apply_dimensionality_reduction(
-                    embeddings, dimensionality_reduction_option, dr_params[dimensionality_reduction_option]
-                )
-        finally:
+        reduction_options_str = (
+            dataset_name
+            + "__"
+            + dimensionality_reduction_option
+            + "__"
+            + "__".join(f"{k}-{v}" for k, v in dr_params[dimensionality_reduction_option].items())
+        )
+        if reduction_options_str in [col.name for col in db._get_reduced_collections()]:
+            reduction_results, _ = load_reduction_results(db, reduction_options_str, include=["embeddings"])
+            st.session_state.current_reduction = reduction_results["embeddings"]
             st.session_state.is_processing = False
+        else:
+            try:
+                with st.spinner(f"Computing {dimensionality_reduction_option} projection..."):
+                    st.session_state.current_reduction = apply_dimensionality_reduction(
+                        embeddings, dimensionality_reduction_option, dr_params[dimensionality_reduction_option]
+                    )
+                    save_reduction_results(
+                        db=db,
+                        reduced_embeddings=st.session_state.current_reduction,
+                        labels=labels,
+                        collection_name=reduction_options_str,
+                        type="reduced",
+                    )
+            finally:
+                st.session_state.is_processing = False
 
 if embeddings is not None and st.session_state.current_reduction is not None:
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Save Current Reduction")
-    
-    save_name = st.sidebar.text_input(
-        "Save reduction as",
-        help="Enter a name to save the current reduction"
-    )
-    
-    if st.sidebar.button("Save Reduction") and save_name:
+    if "save_clicked" not in st.session_state:
+        st.session_state.save_clicked = False
+
+    def handle_save():
         try:
-            save_reduction_results(
-                st.session_state.current_reduction,
-                labels,
-                dimensionality_reduction_option,
-                dr_params[dimensionality_reduction_option],
-                save_name
-            )
-            st.sidebar.success(f"Saved reduction as '{save_name}'")
+            if st.session_state.custom_save_name != "":
+                save_name = st.session_state.custom_save_name
+                if "current_reduction" not in st.session_state or st.session_state.current_reduction is None:
+                    st.error("No reduction results to save. Please perform a reduction first.")
+                    return
+
+                save_reduction_results(
+                    db=db,
+                    reduced_embeddings=st.session_state.current_reduction,
+                    labels=labels,
+                    method=dimensionality_reduction_option,
+                    params=dr_params[dimensionality_reduction_option],
+                    collection_name=save_name,
+                    type="saved",
+                )
+                st.success(f"Successfully saved reduction as '{save_name}'")
+                st.session_state.custom_save_name = ""
+
         except Exception as e:
-            st.sidebar.error(f"Error saving reduction: {str(e)}")
+            st.error(f"An unexpected error occurred while saving: {str(e)}. Please try again.")
 
-    tab2D, tab3D = st.tabs(["2D", "3D"])
+    if len(labels) == len(st.session_state.current_reduction):
+        tab2D, tab3D = st.tabs(["2D", "3D"])
 
-    with tab2D:
-        fig = plot_reduced_embeddings(st.session_state.current_reduction, labels, dimensionality_reduction_option, type="2D")
-        st.plotly_chart(fig, use_container_width=True, key="2D")
+        with tab2D:
+            fig = plot_reduced_embeddings(
+                st.session_state.current_reduction, labels, dimensionality_reduction_option, type="2D"
+            )
+            st.plotly_chart(fig, use_container_width=True, key="2D")
 
-    with tab3D:
-        fig3D = plot_reduced_embeddings(st.session_state.current_reduction, labels, dimensionality_reduction_option, type="3D")
-        st.plotly_chart(fig3D, use_container_width=True, key="3D")
+        with tab3D:
+            fig3D = plot_reduced_embeddings(
+                st.session_state.current_reduction, labels, dimensionality_reduction_option, type="3D"
+            )
+            st.plotly_chart(fig3D, use_container_width=True, key="3D")
+
+        save_container = st.container()
+
+        with save_container:
+            st.markdown("---")
+            st.subheader("Save Current Reduction")
+
+            st.text_input(
+                "Save reduction as", help="Enter a name to save the current reduction", key="custom_save_name"
+            )
+
+            if st.session_state.custom_save_name != "":
+                st.session_state.disabled = False
+
+            save_button = st.button(
+                "💾 Save Reduction",
+                key="save_reduction_button",
+                on_click=handle_save,
+                use_container_width=True,
+                type="primary",
+                disabled=st.session_state.disabled,
+            )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("ChromaDB Collections")
@@ -340,3 +362,4 @@ try:
         st.sidebar.info("No collections found in ChromaDB")
 except Exception as e:
     st.sidebar.error(f"Error fetching collections: {str(e)}")
+    
