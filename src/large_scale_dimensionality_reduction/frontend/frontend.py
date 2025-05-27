@@ -9,6 +9,7 @@ from large_scale_dimensionality_reduction.frontend.utils import (
     load_reduction_results,
 )
 from large_scale_dimensionality_reduction.frontend.visualizations import plot_reduced_embeddings
+from large_scale_dimensionality_reduction.utils.database import DatasetDB
 from large_scale_dimensionality_reduction.vector_db import VectorDB
 from large_scale_dimensionality_reduction.embeddings import Embeddings
 
@@ -86,6 +87,25 @@ st.sidebar.markdown(
         </button>
     </a>
 </div>
+<div style='text-align: center; margin-bottom: 20px;'>
+    <a href='/datasets' target='_self' style='text-decoration: none;'>
+        <button style='
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        '>
+            📊 View Datasets
+        </button>
+    </a>
+</div>
 """,
     unsafe_allow_html=True,
 )
@@ -144,13 +164,24 @@ if dataset_option == "Upload your own data":
                     f"Column '{label_column}' not found in the dataset. Please check the column name and try again."
                 )
             else:
-                dataset_name = create_embeddings(st.session_state.embeddings_instance, uploaded_file, label_column)
+                dataset_name, s3_key = create_embeddings(st.session_state.embeddings_instance, uploaded_file, label_column)
+                if dataset_name:
+                    st.session_state.current_s3_key = s3_key 
                 st.success("Dataset processed successfully!")
                 st.experimental_set_query_params(dataset_option="Existing dataset")
 
 if dataset_option == "Existing dataset":
     collections = [col.name for col in db.get_all_datasets()]
     dataset_name = st.selectbox("Choose a dataset", collections, disabled=st.session_state.is_processing)
+    
+    if dataset_name:
+        try:
+            db_instance = DatasetDB()
+            dataset_info = db_instance.get_dataset_by_collection_name(dataset_name)
+            if dataset_info:
+                st.session_state.current_s3_key = dataset_info['s3_key']
+        except Exception as e:
+            st.error(f"Failed to get dataset information: {str(e)}")
 
 
 dimensionality_reduction_option = st.sidebar.selectbox(
@@ -263,16 +294,23 @@ if dataset_size is not None:
         else:
             try:
                 with st.spinner(f"Computing {dimensionality_reduction_option} projection..."):
-                    st.session_state.current_reduction = apply_dimensionality_reduction(
-                        embeddings, dimensionality_reduction_option, dr_params[dimensionality_reduction_option]
-                    )
-                    save_reduction_results(
-                        db=db,
-                        reduced_embeddings=st.session_state.current_reduction,
-                        labels=labels,
-                        collection_name=reduction_options_str,
-                        type="reduced",
-                    )
+                    if 'current_s3_key' in st.session_state:
+                        st.session_state.current_reduction = apply_dimensionality_reduction(
+                            embeddings, 
+                            dimensionality_reduction_option, 
+                            dr_params[dimensionality_reduction_option],
+                            transfer_to_hpc_server=True,
+                            dataset_filename=st.session_state.current_s3_key
+                        )
+                        save_reduction_results(
+                            db=db,
+                            reduced_embeddings=st.session_state.current_reduction,
+                            labels=labels,
+                            collection_name=reduction_options_str,
+                            type="reduced",
+                        )
+                    else:
+                        st.error("S3 key not found for the selected dataset")
             finally:
                 st.session_state.is_processing = False
 

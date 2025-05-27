@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 import streamlit as st
 import pandas as pd
@@ -10,11 +10,14 @@ from chromadb.api.models.Collection import Collection
 from sklearn.manifold import TSNE
 import numpy as np
 import json
+import tempfile
+import os
 
 from large_scale_dimensionality_reduction.vector_db import VectorDB
 from large_scale_dimensionality_reduction.embeddings import Embeddings
-from large_scale_dimensionality_reduction.utils import S3Client, DatasetDB
+from large_scale_dimensionality_reduction.utils import S3Client, DatasetDB, SSHClient, setup_logger
 
+logger = setup_logger("dim_reduction-logger")
 
 def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_column: str = "label", description: str = None) -> str | None:
     """
@@ -109,7 +112,7 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
                     st.warning(f"Failed to clean up resources: {str(cleanup_error)}")
             return None
 
-        return collection_name
+        return collection_name, s3_key
 
     except Exception as e:
         st.error(f"Error processing dataset: {str(e)}")
@@ -165,7 +168,99 @@ def get_embeddings(db: VectorDB, dataset_name: str) -> Tuple[np.ndarray, list[st
     return embeddings, labels
 
 
-def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: Dict[str, int | float]) -> np.ndarray:
+def transfer_script_to_hpc(method: str, dataset_filename: str = None) -> bool:
+    """
+    Transfer the appropriate visualization script, its slurm job script, and download script to HPC server.
+    
+    Args:
+        method: The dimensionality reduction method ('UMAP', 't-SNE', 'PaCMAP', or 'TriMAP')
+        dataset_filename: Optional name of the dataset file in S3 to download
+        
+    Returns:
+        bool: True if transfer was successful, False otherwise
+    """
+    script_map = {
+        'UMAP': ('visualisations_script_umap.py', 'slurm_job_umap.sh'),
+        't-SNE': ('visualisations_script_tsne.py', 'slurm_job_tsne.sh'),
+        'PaCMAP': ('visualisations_script_pacmap.py', 'slurm_job_pacmap.sh'),
+        'TriMAP': ('visualisations_script_trimap.py', 'slurm_job_trimap.sh')
+    }
+    
+    if method not in script_map:
+        logger.error(f"Unsupported method: {method}")
+        return False
+        
+    python_script, slurm_script = script_map[method]
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    
+    bucket_url = os.getenv('S3_BUCKET_URL')
+    if not bucket_url:
+        logger.error("S3_BUCKET_URL environment variable is not set")
+        return False
+    
+    scripts_to_transfer = [
+        (python_script, 'visualisation'),
+        (slurm_script, 'slurm'),
+        ('download_from_s3.sh', 'download')
+    ]
+    
+    for script_name, _ in scripts_to_transfer:
+        script_path = os.path.join(project_root, 'scripts', script_name)
+        if not os.path.exists(script_path):
+            logger.error(f"Script not found at {script_path}")
+            return False
+    
+    try:
+        ssh = SSHClient()
+        ssh.connect()
+        
+        for script_name, script_type in scripts_to_transfer:
+            local_path = os.path.join(project_root, 'scripts', script_name)
+            remote_path = os.path.join(ssh.work_dir, script_name)
+            
+            if script_name == 'download_from_s3.sh':
+                with open(local_path, 'r') as f:
+                    content = f.read()
+                content = content.replace(
+                    'BUCKET_URL=${S3_BUCKET_URL:-""}',
+                    f'BUCKET_URL="{bucket_url}"'
+                )
+                temp_path = local_path + '.tmp'
+                with open(temp_path, 'w') as f:
+                    f.write(content)
+                ssh.upload_file(temp_path, remote_path)
+                os.remove(temp_path)
+            else:
+                ssh.upload_file(local_path, remote_path)
+            
+            ssh.execute_command(f"chmod +x {remote_path}")
+        
+        # TODO: Write a script that is going to send the reduced dataset to the chroma DB. This script will be sent and exececuted on the HPC server.
+        if dataset_filename:
+            download_script_path = os.path.join(ssh.work_dir, 'download_from_s3.sh')
+            work_folder = os.getenv('HPC_WORK_FOLDER')
+            if not work_folder:
+                logger.error("HPC_WORK_FOLDER environment variable is not set")
+                return False
+                
+            exit_code, stdout, stderr = ssh.execute_command(
+                f"HPC_WORK_FOLDER={work_folder} {download_script_path} {dataset_filename}"
+            )
+            if exit_code != 0:
+                logger.error(f"Failed to download dataset: {stderr}")
+                return False
+            logger.info(f"Successfully downloaded dataset: {dataset_filename}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to transfer scripts to HPC: {str(e)}")
+        return False
+    finally:
+        if 'ssh' in locals():
+            ssh.disconnect()
+
+
+def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: Dict[str, int | float], transfer_to_hpc_server: bool = False, dataset_filename: str = None) -> np.ndarray:
     """
     Apply dimensionality reduction to embedding vectors using the specified method.
 
@@ -174,14 +269,33 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
         The high-dimensional embedding vectors to reduce.
     method : str
         The dimensionality reduction method to use. Should be one of:
-        'UMAP', 't-SNE', 'PaCMAP', or 'TriMAP'.
+        'UMAP', 't-SNE', 'PaCMAP', 'TriMAP'.
     params : Dict[str, int | float]
         Parameters for the dimensionality reduction method.
+    transfer_to_hpc_server : bool, optional
+        If True, will transfer the visualization script to HPC server.
+        Default is False.
+    dataset_filename : str, optional
+        Name of the dataset file in S3 to download on the HPC server.
+        Required if transfer_to_hpc_server is True.
 
     Returns:
     np.ndarray
         The reduced embeddings with shape (n_samples, n_components).
     """
+    if transfer_to_hpc_server:
+        if not dataset_filename:
+            st.error("Dataset filename is required when transferring to HPC server")
+            return None
+            
+        status_text = st.empty()
+        status_text.text(f"Transferring {method} scripts to HPC server...")
+        if transfer_script_to_hpc(method, dataset_filename):
+            status_text.text("Scripts transfer completed successfully!")
+        else:
+            st.error(f"Failed to transfer {method} scripts to HPC server")
+            return None
+        status_text.empty()
 
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -241,14 +355,11 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
         return reduced
 
     finally:
-
         def cleanup():
             import time
-
             time.sleep(1)
             progress_bar.empty()
             status_text.empty()
-
         cleanup()
 
 

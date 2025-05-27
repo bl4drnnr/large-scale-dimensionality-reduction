@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=pca-job
+#SBATCH --job-name=umap-job
 #SBATCH --ntasks=1
 #SBATCH --time=00:10:00
 #SBATCH --mem=4G
@@ -13,4 +13,4 @@ conda activate visualisations-venv
 
 cd $SLURM_SUBMIT_DIR
 
-python3 visualisations_script.py input.csv output.csv {{n_components}}
+python3 visualisations_script_umap.py input.csv output.csv {{n_components}} {{n_neighbors}} {{min_dist}} 
