@@ -110,7 +110,7 @@ else:
         
         with col1:
             if st.button("📝 Update Description", use_container_width=True):
-                if db.update_dataset_description(selected_dataset['id'], new_description):
+                if db.update_dataset(selected_dataset['id'], description=new_description):
                     st.success("Description updated!")
                     st.rerun()
                 else:
@@ -133,12 +133,30 @@ else:
             if st.button("🗑️ Delete Dataset", type="primary", use_container_width=True):
                 try:
                     s3_client = S3Client()
-                    s3_client.delete_object(selected_dataset['s3_key'])
+                    deletion_successful = True
                     
-                    if db.delete_dataset(selected_dataset['id']):
-                        st.success("Dataset deleted successfully from both S3 and database!")
-                        st.rerun()
+                    try:
+                        s3_client.delete_object(selected_dataset['s3_key'])
+                        st.success("Deleted raw data file from S3")
+                    except Exception as e:
+                        st.error(f"Failed to delete raw data file: {str(e)}")
+                        deletion_successful = False
+                    
+                    if deletion_successful and selected_dataset.get('embeddings_key'):
+                        try:
+                            s3_client.delete_object(selected_dataset['embeddings_key'])
+                            st.success("Deleted embeddings file from S3")
+                        except Exception as e:
+                            st.error(f"Failed to delete embeddings file: {str(e)}")
+                            deletion_successful = False
+                    
+                    if deletion_successful:
+                        if db.delete_dataset(selected_dataset['id']):
+                            st.success("Dataset deleted successfully from database!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete dataset from database")
                     else:
-                        st.error("Failed to delete dataset from database")
+                        st.error("Dataset deletion was not completed due to S3 errors")
                 except Exception as e:
                     st.error(f"Error deleting dataset: {str(e)}") 

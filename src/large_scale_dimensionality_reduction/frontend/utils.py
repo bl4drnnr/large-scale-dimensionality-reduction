@@ -10,16 +10,16 @@ from chromadb.api.models.Collection import Collection
 from sklearn.manifold import TSNE
 import numpy as np
 import json
-import tempfile
 import os
 
 from large_scale_dimensionality_reduction.vector_db import VectorDB
 from large_scale_dimensionality_reduction.embeddings import Embeddings
 from large_scale_dimensionality_reduction.utils import S3Client, DatasetDB, SSHClient, setup_logger
+from large_scale_dimensionality_reduction.utils.config import cfg
 
 logger = setup_logger("dim_reduction-logger")
 
-def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_column: str = "label", description: str = None) -> str | None:
+def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_column: str = "label", description: str = None) -> Tuple[str, str] | None:
     """
     Creates embeddings from uploaded CSV file and adds them to the vector database.
     Also uploads the file to S3 for backup and stores metadata in SQLite.
@@ -39,8 +39,8 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
         Optional description of the dataset.
 
     Returns:
-    str or None
-        The name of the created collection, or None if there was an error.
+    Tuple[str, str] or None
+        A tuple containing (collection_name, embeddings_key) if successful, None if there was an error.
     """
     try:
         df = pd.read_csv(uploaded_file)
@@ -60,25 +60,28 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
         ids = [f"doc_{i}" for i in range(len(texts))] if "id" not in df.columns else df["id"].tolist()
         metadatas = [{label_column: label} for label in labels]
 
-        s3_key = None
+        s3_client = S3Client()
+        
+        raw_data_key = None
+        embeddings_key = None
+        
         try:
-            s3_client = S3Client()
-            s3_key = s3_client.upload_dataframe(
+            raw_data_key = s3_client.upload_dataframe(
                 df=df,
                 filename=uploaded_file.name,
                 prefix="raw_data"
             )
-            st.success(f"Dataset uploaded to S3: {s3_key}")
+            st.success(f"Dataset uploaded to S3: {raw_data_key}")
         except Exception as e:
             st.error(f"Failed to upload dataset to S3: {str(e)}")
             return None
 
-        if s3_key:
+        if raw_data_key:
             try:
                 db = DatasetDB()
                 db.add_dataset(
                     name=uploaded_file.name,
-                    s3_key=s3_key,
+                    s3_key=raw_data_key,
                     collection_name=collection_name,
                     label_column=label_column,
                     num_rows=len(df),
@@ -98,21 +101,50 @@ def create_embeddings(embeddings_instance: Embeddings, uploaded_file, label_colu
                 batch_size=5000
             )
             st.success(f"Embeddings stored in ChromaDB collection: {collection_name}")
+            
+            try:
+                db = VectorDB()
+                embeddings_result = db.get_all_items_from_collection(collection_name, include=["embeddings"])
+                embeddings = np.array(embeddings_result["embeddings"])
+                
+                embeddings_df = pd.DataFrame(embeddings)
+                embeddings_df['label'] = labels
+                
+                embeddings_key = s3_client.upload_dataframe(
+                    df=embeddings_df,
+                    filename=f"{collection_name}_embeddings.csv",
+                    prefix="embeddings"
+                )
+                st.success(f"Embeddings saved to S3: {embeddings_key}")
+                
+                db_instance = DatasetDB()
+                dataset_info = db_instance.get_dataset_by_collection_name(collection_name)
+                if dataset_info:
+                    db_instance.update_dataset(
+                        dataset_info['id'],
+                        embeddings_key=embeddings_key
+                    )
+                
+            except Exception as e:
+                st.error(f"Failed to save embeddings to S3: {str(e)}")
+                if embeddings_key is None:
+                    return None
+                
         except Exception as e:
             st.error(f"Failed to store embeddings in ChromaDB: {str(e)}")
-            if s3_key:
+            if raw_data_key:
                 try:
                     db = DatasetDB()
-                    db.delete_dataset(db.get_dataset_by_s3_key(s3_key)["id"])
+                    db.delete_dataset(db.get_dataset_by_s3_key(raw_data_key)["id"])
                     
                     s3_client = S3Client()
-                    s3_client.delete_object(s3_key)
+                    s3_client.delete_object(raw_data_key)
                     st.info(f"Cleaned up: removed dataset from S3 and local database")
                 except Exception as cleanup_error:
                     st.warning(f"Failed to clean up resources: {str(cleanup_error)}")
             return None
 
-        return collection_name, s3_key
+        return collection_name, embeddings_key
 
     except Exception as e:
         st.error(f"Error processing dataset: {str(e)}")
@@ -168,16 +200,18 @@ def get_embeddings(db: VectorDB, dataset_name: str) -> Tuple[np.ndarray, list[st
     return embeddings, labels
 
 
-def transfer_script_to_hpc(method: str, dataset_filename: str = None) -> bool:
+def transfer_script_to_hpc(method: str, dataset_filename: str = None, params: Dict[str, int | float] = None) -> bool:
     """
     Transfer the appropriate visualization script, its slurm job script, and download script to HPC server.
+    Also submits a SLURM job if parameters are provided.
     
     Args:
         method: The dimensionality reduction method ('UMAP', 't-SNE', 'PaCMAP', or 'TriMAP')
         dataset_filename: Optional name of the dataset file in S3 to download
+        params: Optional parameters for the dimensionality reduction method
         
     Returns:
-        bool: True if transfer was successful, False otherwise
+        bool: True if transfer and job submission were successful, False otherwise
     """
     script_map = {
         'UMAP': ('visualisations_script_umap.py', 'slurm_job_umap.sh'),
@@ -201,7 +235,8 @@ def transfer_script_to_hpc(method: str, dataset_filename: str = None) -> bool:
     scripts_to_transfer = [
         (python_script, 'visualisation'),
         (slurm_script, 'slurm'),
-        ('download_from_s3.sh', 'download')
+        ('download_from_s3.sh', 'download'),
+        ('send_to_chroma.py', 'chroma')
     ]
     
     for script_name, _ in scripts_to_transfer:
@@ -229,13 +264,15 @@ def transfer_script_to_hpc(method: str, dataset_filename: str = None) -> bool:
                 with open(temp_path, 'w') as f:
                     f.write(content)
                 ssh.upload_file(temp_path, remote_path)
+                ssh.execute_command(f"chmod +x {remote_path}")
                 os.remove(temp_path)
+            elif script_name == 'send_to_chroma.py':
+                ssh.upload_file(local_path, remote_path)
+                ssh.execute_command(f"chmod +x {remote_path}")
             else:
                 ssh.upload_file(local_path, remote_path)
-            
-            ssh.execute_command(f"chmod +x {remote_path}")
+                ssh.execute_command(f"chmod +x {remote_path}")
         
-        # TODO: Write a script that is going to send the reduced dataset to the chroma DB. This script will be sent and exececuted on the HPC server.
         if dataset_filename:
             download_script_path = os.path.join(ssh.work_dir, 'download_from_s3.sh')
             work_folder = os.getenv('HPC_WORK_FOLDER')
@@ -250,6 +287,51 @@ def transfer_script_to_hpc(method: str, dataset_filename: str = None) -> bool:
                 logger.error(f"Failed to download dataset: {stderr}")
                 return False
             logger.info(f"Successfully downloaded dataset: {dataset_filename}")
+            
+            if params is not None:
+                hpc_filename = dataset_filename.replace('embeddings/', '')
+                input_file = os.path.join(work_folder, hpc_filename)
+                output_file = os.path.join(work_folder, f"{hpc_filename[:-4]}_reduced.csv")
+                
+                slurm_script_path = os.path.join(ssh.work_dir, slurm_script)
+                with open(os.path.join(project_root, 'scripts', slurm_script), 'r') as f:
+                    slurm_content = f.read()
+                
+                if method == 'UMAP':
+                    slurm_content = slurm_content.replace('{{n_components}}', str(params['n_components']))
+                    slurm_content = slurm_content.replace('{{n_neighbors}}', str(params['n_neighbors']))
+                    slurm_content = slurm_content.replace('{{min_dist}}', str(params['min_dist']))
+                elif method == 't-SNE':
+                    slurm_content = slurm_content.replace('{{n_components}}', str(params['n_components']))
+                    slurm_content = slurm_content.replace('{{perplexity}}', str(params['perplexity']))
+                    slurm_content = slurm_content.replace('{{max_iter}}', str(params['max_iter']))
+                elif method == 'PaCMAP':
+                    slurm_content = slurm_content.replace('{{n_components}}', str(params['n_components']))
+                    slurm_content = slurm_content.replace('{{n_neighbors}}', str(params['n_neighbors']))
+                elif method == 'TriMAP':
+                    slurm_content = slurm_content.replace('{{n_components}}', str(params['n_components']))
+                    slurm_content = slurm_content.replace('{{n_neighbors}}', str(params['n_neighbors']))
+                
+                slurm_content = slurm_content.replace('input.csv', input_file)
+                slurm_content = slurm_content.replace('output.csv', output_file)
+                
+                slurm_content += f"\npython3 {os.path.join(ssh.work_dir, 'send_to_chroma.py')} {output_file} {hpc_filename[:-4]}_reduced {method} '{json.dumps(params)}' {cfg.CHROMA_HOST} {cfg.CHROMA_PORT}\n"
+                
+                temp_slurm_path = os.path.join(ssh.work_dir, f"temp_{slurm_script}")
+                ssh.execute_command(f"cat > {temp_slurm_path} << 'EOL'\n{slurm_content}\nEOL")
+                ssh.execute_command(f"chmod +x {temp_slurm_path}")
+                
+                logger.info(f"Submitting SLURM job for {method}...")
+                exit_code, stdout, stderr = ssh.execute_command(f"sbatch {temp_slurm_path}")
+                if exit_code != 0:
+                    logger.error(f"Failed to submit SLURM job: {stderr}")
+                    return False
+                
+                job_id = stdout.strip().split()[-1]
+                logger.info(f"SLURM job submitted with ID: {job_id}")
+                
+                ssh.execute_command(f"rm {temp_slurm_path}")
+                return True
         
         return True
     except Exception as e:
@@ -273,7 +355,7 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
     params : Dict[str, int | float]
         Parameters for the dimensionality reduction method.
     transfer_to_hpc_server : bool, optional
-        If True, will transfer the visualization script to HPC server.
+        If True, will transfer the visualization script to HPC server and submit a SLURM job.
         Default is False.
     dataset_filename : str, optional
         Name of the dataset file in S3 to download on the HPC server.
@@ -289,13 +371,13 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
             return None
             
         status_text = st.empty()
-        status_text.text(f"Transferring {method} scripts to HPC server...")
-        if transfer_script_to_hpc(method, dataset_filename):
-            status_text.text("Scripts transfer completed successfully!")
-        else:
-            st.error(f"Failed to transfer {method} scripts to HPC server")
+        status_text.text(f"Transferring {method} scripts to HPC server and submitting job...")
+        if transfer_script_to_hpc(method, dataset_filename, params):
+            status_text.text("Job submitted successfully! The results will be available in the HPC work directory.")
             return None
-        status_text.empty()
+        else:
+            st.error(f"Failed to submit {method} job to HPC server")
+            return None
 
     progress_bar = st.progress(0)
     status_text = st.empty()

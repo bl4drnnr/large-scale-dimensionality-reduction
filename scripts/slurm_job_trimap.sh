@@ -13,4 +13,4 @@ conda activate visualisations-venv
 
 cd $SLURM_SUBMIT_DIR
 
-python3 visualisations_script_trimap.py input.csv output.csv {{n_components}} {{n_neighbors}} 
+python3 visualisations/visualisations_script_trimap.py input.csv output.csv {{n_components}} {{n_neighbors}} 

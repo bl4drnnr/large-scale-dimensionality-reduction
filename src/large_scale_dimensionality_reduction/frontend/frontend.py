@@ -179,7 +179,11 @@ if dataset_option == "Existing dataset":
             db_instance = DatasetDB()
             dataset_info = db_instance.get_dataset_by_collection_name(dataset_name)
             if dataset_info:
-                st.session_state.current_s3_key = dataset_info['s3_key']
+                if dataset_info.get('embeddings_key'):
+                    st.session_state.current_s3_key = dataset_info['embeddings_key']
+                else:
+                    st.warning("No embeddings found for this dataset. Please reprocess the dataset.")
+                    st.session_state.current_s3_key = None
         except Exception as e:
             st.error(f"Failed to get dataset information: {str(e)}")
 
