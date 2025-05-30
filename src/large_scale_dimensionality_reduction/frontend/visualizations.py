@@ -51,6 +51,8 @@ def plot_reduced_embeddings(
             width=800,
             color_discrete_sequence=px.colors.qualitative.Alphabet,
         )
+        fig.update_traces(marker=dict(size=8))
+
     elif type == "3D":
         fig = px.scatter_3d(
             df,
@@ -65,6 +67,7 @@ def plot_reduced_embeddings(
             width=800,
             color_discrete_sequence=px.colors.qualitative.Alphabet,
         )
+        fig.update_traces(marker=dict(size=5))
 
     fig.update_layout(
         legend_title_text="Categories", legend=dict(itemsizing="constant"), margin=dict(l=20, r=20, t=50, b=20)
