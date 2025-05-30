@@ -10,6 +10,7 @@ n_neighbors = int(sys.argv[4])
 
 df = pd.read_csv(input_file)
 X = df.select_dtypes(include='number')
+label = df['label'] if 'label' in df.columns else None
 
 reducer = trimap.TRIMAP(
     n_dims=n_components,
@@ -18,4 +19,8 @@ reducer = trimap.TRIMAP(
 components = reducer.fit_transform(X)
 
 df_reduced = pd.DataFrame(components, columns=[f"TriMAP{i+1}" for i in range(n_components)])
+
+if label is not None:
+    df_reduced['label'] = label
+
 df_reduced.to_csv(output_file, index=False) 

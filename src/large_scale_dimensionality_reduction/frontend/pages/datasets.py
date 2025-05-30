@@ -153,7 +153,6 @@ else:
                     if deletion_successful:
                         if db.delete_dataset(selected_dataset['id']):
                             st.success("Dataset deleted successfully from database!")
-                            st.rerun()
                         else:
                             st.error("Failed to delete dataset from database")
                     else:

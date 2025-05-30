@@ -315,7 +315,17 @@ def transfer_script_to_hpc(method: str, dataset_filename: str = None, params: Di
                 slurm_content = slurm_content.replace('input.csv', input_file)
                 slurm_content = slurm_content.replace('output.csv', output_file)
                 
-                slurm_content += f"\npython3 {os.path.join(ssh.work_dir, 'send_to_chroma.py')} {output_file} {hpc_filename[:-4]}_reduced {method} '{json.dumps(params)}' {cfg.CHROMA_HOST} {cfg.CHROMA_PORT}\n"
+                collection_name = f"{hpc_filename[:-4]}_reduced_{method.lower()}"
+                if method == 'UMAP':
+                    collection_name += f"_n{params['n_neighbors']}_d{params['min_dist']}"
+                elif method == 't-SNE':
+                    collection_name += f"_p{params['perplexity']}_i{params['max_iter']}"
+                elif method == 'PaCMAP':
+                    collection_name += f"_n{params['n_neighbors']}"
+                elif method == 'TriMAP':
+                    collection_name += f"_n{params['n_neighbors']}"
+                
+                slurm_content += f"\npython3 {os.path.join(ssh.work_dir, 'send_to_chroma.py')} {output_file} {collection_name} {method} '{json.dumps(params)}' {cfg.CHROMA_HOST} {cfg.CHROMA_PORT}\n"
                 
                 temp_slurm_path = os.path.join(ssh.work_dir, f"temp_{slurm_script}")
                 ssh.execute_command(f"cat > {temp_slurm_path} << 'EOL'\n{slurm_content}\nEOL")
@@ -342,7 +352,7 @@ def transfer_script_to_hpc(method: str, dataset_filename: str = None, params: Di
             ssh.disconnect()
 
 
-def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: Dict[str, int | float], transfer_to_hpc_server: bool = False, dataset_filename: str = None) -> np.ndarray:
+def apply_dimensionality_reduction(method: str, params: Dict[str, int | float], dataset_filename: str = None):
     """
     Apply dimensionality reduction to embedding vectors using the specified method.
 
@@ -354,120 +364,26 @@ def apply_dimensionality_reduction(embeddings: np.ndarray, method: str, params: 
         'UMAP', 't-SNE', 'PaCMAP', 'TriMAP'.
     params : Dict[str, int | float]
         Parameters for the dimensionality reduction method.
-    transfer_to_hpc_server : bool, optional
-        If True, will transfer the visualization script to HPC server and submit a SLURM job.
         Default is False.
     dataset_filename : str, optional
         Name of the dataset file in S3 to download on the HPC server.
-        Required if transfer_to_hpc_server is True.
 
     Returns:
     np.ndarray
         The reduced embeddings with shape (n_samples, n_components).
     """
-    if transfer_to_hpc_server:
-        if not dataset_filename:
-            st.error("Dataset filename is required when transferring to HPC server")
-            return None
-            
-        status_text = st.empty()
-        status_text.text(f"Transferring {method} scripts to HPC server and submitting job...")
-        if transfer_script_to_hpc(method, dataset_filename, params):
-            status_text.text("Job submitted successfully! The results will be available in the HPC work directory.")
-            return None
-        else:
-            st.error(f"Failed to submit {method} job to HPC server")
-            return None
-
-    progress_bar = st.progress(0)
+    
+    if not dataset_filename:
+        st.error("Dataset filename is required when transferring to HPC server")
+        return None
+        
     status_text = st.empty()
-
-    try:
-        if method == "UMAP":
-            status_text.text("Initializing UMAP...")
-            progress_bar.progress(10)
-            reducer = umap.UMAP(
-                n_neighbors=params["n_neighbors"],
-                min_dist=params["min_dist"],
-                n_components=params["n_components"],
-            )
-            status_text.text("Computing UMAP projection...")
-            progress_bar.progress(30)
-            reduced = reducer.fit_transform(embeddings)
-            progress_bar.progress(100)
-
-        elif method == "t-SNE":
-            status_text.text("Initializing t-SNE...")
-            progress_bar.progress(10)
-            reducer = TSNE(
-                n_components=params["n_components"],
-                perplexity=params["perplexity"],
-                max_iter=params["max_iter"],
-            )
-            status_text.text("Computing t-SNE projection (this may take a while)...")
-            progress_bar.progress(30)
-            reduced = reducer.fit_transform(embeddings)
-            progress_bar.progress(100)
-
-        elif method == "PaCMAP":
-            status_text.text("Initializing PaCMAP...")
-            progress_bar.progress(10)
-            reducer = pacmap.PaCMAP(
-                n_neighbors=params["n_neighbors"], n_components=params["n_components"]
-            )
-            status_text.text("Computing PaCMAP projection...")
-            progress_bar.progress(30)
-            reduced = reducer.fit_transform(embeddings)
-            progress_bar.progress(100)
-
-        elif method == "TriMAP":
-            status_text.text("Initializing TriMAP...")
-            progress_bar.progress(10)
-            reducer = trimap.TRIMAP(n_dims=params["n_components"], n_inliers=params["n_neighbors"])
-            status_text.text("Computing TriMAP projection...")
-            progress_bar.progress(30)
-            reduced = reducer.fit_transform(embeddings)
-            progress_bar.progress(100)
-
-        else:
-            st.error(f"Unsupported dimensionality reduction method: {method}")
-            return None
-
-        status_text.text("Dimensionality reduction completed!")
-        return reduced
-
-    finally:
-        def cleanup():
-            import time
-            time.sleep(1)
-            progress_bar.empty()
-            status_text.empty()
-        cleanup()
-
-
-def save_reduction_results(
-    db: VectorDB,
-    reduced_embeddings: np.ndarray,
-    labels: list[str],
-    collection_name: str,
-    type="reduced",
-    method: str = None,
-    params: dict = None,
-) -> None:
-    """
-    Save dimensionality reduction results to the vector database.
-    """
-    metadata = {"type": type}
-    if params is not None:
-        metadata["params"] = json.dumps(params)
-    if method is not None:
-        metadata["method"] = method
-
-    db.add_collection(collection_name, metadata=metadata)
-
-    metadatas = [{"label": label} for label in labels]
-
-    db.add_reduced_to_collection(collection_name, list(reduced_embeddings), metadata=metadatas)
+    status_text.text(f"Transferring {method} scripts to HPC server and submitting job...")
+    
+    if transfer_script_to_hpc(method, dataset_filename, params):
+        status_text.text("Job submitted successfully! The results will be available in the HPC work directory.")
+    else:
+        st.error(f"Failed to submit {method} job to HPC server")
 
 
 def load_reduction_results(db: VectorDB, collection_name: str, include=["embeddings"]) -> tuple[GetResult, Collection]:

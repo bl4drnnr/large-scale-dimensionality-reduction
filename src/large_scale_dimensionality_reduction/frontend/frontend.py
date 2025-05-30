@@ -5,7 +5,6 @@ from large_scale_dimensionality_reduction.frontend.utils import (
     apply_dimensionality_reduction,
     get_embeddings,
     create_embeddings,
-    save_reduction_results,
     load_reduction_results,
 )
 from large_scale_dimensionality_reduction.frontend.visualizations import plot_reduced_embeddings
@@ -299,19 +298,10 @@ if dataset_size is not None:
             try:
                 with st.spinner(f"Computing {dimensionality_reduction_option} projection..."):
                     if 'current_s3_key' in st.session_state:
-                        st.session_state.current_reduction = apply_dimensionality_reduction(
-                            embeddings, 
+                        apply_dimensionality_reduction(
                             dimensionality_reduction_option, 
                             dr_params[dimensionality_reduction_option],
-                            transfer_to_hpc_server=True,
                             dataset_filename=st.session_state.current_s3_key
-                        )
-                        save_reduction_results(
-                            db=db,
-                            reduced_embeddings=st.session_state.current_reduction,
-                            labels=labels,
-                            collection_name=reduction_options_str,
-                            type="reduced",
                         )
                     else:
                         st.error("S3 key not found for the selected dataset")
@@ -319,32 +309,6 @@ if dataset_size is not None:
                 st.session_state.is_processing = False
 
 if embeddings is not None and st.session_state.current_reduction is not None:
-    if "save_clicked" not in st.session_state:
-        st.session_state.save_clicked = False
-
-    def handle_save():
-        try:
-            if st.session_state.custom_save_name != "":
-                save_name = st.session_state.custom_save_name
-                if "current_reduction" not in st.session_state or st.session_state.current_reduction is None:
-                    st.error("No reduction results to save. Please perform a reduction first.")
-                    return
-
-                save_reduction_results(
-                    db=db,
-                    reduced_embeddings=st.session_state.current_reduction,
-                    labels=labels,
-                    method=dimensionality_reduction_option,
-                    params=dr_params[dimensionality_reduction_option],
-                    collection_name=save_name,
-                    type="saved",
-                )
-                st.success(f"Successfully saved reduction as '{save_name}'")
-                st.session_state.custom_save_name = ""
-
-        except Exception as e:
-            st.error(f"An unexpected error occurred while saving: {str(e)}. Please try again.")
-
     if len(labels) == len(st.session_state.current_reduction):
         tab2D, tab3D = st.tabs(["2D", "3D"])
 
@@ -359,28 +323,6 @@ if embeddings is not None and st.session_state.current_reduction is not None:
                 st.session_state.current_reduction, labels, dimensionality_reduction_option, type="3D"
             )
             st.plotly_chart(fig3D, use_container_width=True, key="3D")
-
-        save_container = st.container()
-
-        with save_container:
-            st.markdown("---")
-            st.subheader("Save Current Reduction")
-
-            st.text_input(
-                "Save reduction as", help="Enter a name to save the current reduction", key="custom_save_name"
-            )
-
-            if st.session_state.custom_save_name != "":
-                st.session_state.disabled = False
-
-            save_button = st.button(
-                "💾 Save Reduction",
-                key="save_reduction_button",
-                on_click=handle_save,
-                use_container_width=True,
-                type="primary",
-                disabled=st.session_state.disabled,
-            )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("ChromaDB Collections")
