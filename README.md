@@ -39,12 +39,21 @@ Once the project is set up, you need to create the `.env` file in the root of th
 
 ```txt
 CHROMA_HOST=<IP address>
-CHROMA_PORT=8000
+CHROMA_PORT=8000 # Default ChromaDB port
 
 AWS_SECRET_ACCESS_KEY=<your aws secret key>
 AWS_ACCESS_KEY_ID=<your aws secret id>
 AWS_REGION=<aws region>
 S3_BUCKET_NAME=<bucket name>
+
+HPC_HOST=<hpc hostname or IP address>
+HPC_USERNAME=<SSH username>
+HPC_WORK_DIR=<SSH working directory>
+HPC_WORK_FOLDER=<SSH working folder>
+HPC_SSH_KEY=<SSH key>
+
+# IMPORTANT NOTE: Here we assume that your bucket is publicly available and you have 2 folders in there: raw_data and embeddings
+S3_BUCKET_URL=<AWS S3 bucket URL>
 ```
 
 The very last step that needs to be done before you can start the project is going to be the setup of the ChromaDB in the cloud (AWS in our case). In order to do that you need to run the following commands in your terminal using AWS CLI:
